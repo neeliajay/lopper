@@ -182,6 +182,7 @@ arm,armv8-timer:
   required:
     - compatible
     - interrupts
+    - interrupt-parent
 
 xlnx,axi-noc2-1.0:
   required:
@@ -370,3 +371,31 @@ xlnx,axi-ethernet-1.00.a:
     - local-mac-address
     - xlnx,rxcsum
     - xlnx,txcsum
+
+arm,cortex-r5:
+  required:
+    - compatible
+    - device_type
+    - reg
+
+arm,gic-v1:
+  required:
+    - compatible
+    - reg
+    - status
+    - interrupt-controller
+    - '#interrupt-cells'
+
+cdns,ttc:
+  required:
+    - compatible
+    - reg
+    - status
+    - interrupts
+    - interrupt-parent
+    - clock-frequency
+
+mmio-sram:
+  required:
+    - compatible
+    - reg

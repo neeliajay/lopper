@@ -481,7 +481,7 @@ def xlnx_generate_domain_dts(tgt_node, sdt, options):
             sdt.tree['/cpus'].delete('address-map')
 
     if zephyr_dt:
-        if "r52" in machine or "a78" in machine:
+        if "r52" in machine or "a78" in machine or "r5" in machine:
             xlnx_generate_zephyr_domain_dts_arm(tgt_node, sdt, options, machine)
             if "a78" in machine:
                 new_dst_node = LopperNode()
@@ -559,6 +559,32 @@ def xlnx_generate_zephyr_domain_dts_arm(tgt_node, sdt, options, machine):
                     new_dst_node['compatible'].value = ["arm,gic-v3", "arm,gic"]
                     sdt.tree + new_dst_node
                     sdt.tree.sync()
+                elif "r5" in machine and (val == "psu_rcpu_gic" or val == "rcpu_gic"):
+                    name  = node.name
+                    addr_cells = node.parent.propval('#address-cells', list)[0]
+                    size_cells = node.parent.propval('#size-cells', list)[0]
+                    if addr_cells == 1 or size_cells == 1:
+                        reg_val = node["reg"].value
+                        new_reg_val = []
+                        for i in range(0, len(reg_val), addr_cells + size_cells):
+                            if addr_cells == 1:
+                                new_reg_val.append(0x0)
+                            new_reg_val.extend( reg_val[i: i + addr_cells] )
+                            if size_cells == 1:
+                                new_reg_val.append(0x0)
+                            new_reg_val.extend( reg_val[i + addr_cells: i + addr_cells + size_cells] )
+                        reg_val = new_reg_val
+                        node["reg"].value = new_reg_val
+                    sdt.tree.delete(node)
+                    sdt.tree.delete(node.parent)
+                    new_dst_node = node()
+                    new_dst_node['#interrupt-cells'] = 4
+                    new_dst_node.abs_path = "/axi/interrupt-controller@f9000000 "
+                    new_dst_node.name = "interrupt-controller@f9000000"
+                    new_dst_node['compatible'].value = ["arm,gic-v1", "arm,gic"]
+                    sdt.tree + new_dst_node
+                    sdt.tree.sync()
+
 
             compatible = node.propval('compatible', list)[0]
             if compatible == "arm,armv8-timer":
@@ -566,7 +592,13 @@ def xlnx_generate_zephyr_domain_dts_arm(tgt_node, sdt, options, machine):
 
             elif node.propval('interrupts') != ['']:
                 intr_list = node["interrupts"].value
-                intr_list.append("0xa0")            
+                new_intr_list = []
+                # Convert from 3 cell to 4 cell format by adding 0xa0 as the 4th cell
+                for i in range(0, len(intr_list), 3):
+                    new_intr_list.extend(intr_list[i:i + 3])
+                    new_intr_list.append(0xa0)
+                intr_list = new_intr_list
+                node["interrupts"].value = intr_list
 
             if compatible == "cpus,cluster":
                 node.name = "cpus" 
@@ -620,15 +652,20 @@ def xlnx_remove_unsupported_nodes(tgt_node, sdt):
                     is_supported_periph = [value for key,value in schema.items() if key in node["compatible"].value]
                     if "xlnx,xps-timer-1.00.a" in node["compatible"].value:
                         node["compatible"].value = ["amd,xps-timer-1.00.a"]
+                    # Cortex-R5F
+                    if "arm,cortex-r5" in node["compatible"].value:
+                        node["compatible"].value = ["arm,cortex-r5f"]
                     # UARTNS550
                     if "xlnx,axi-uart16550-2.0" in node["compatible"].value:
                         node["compatible"].value = ["ns16550"]
                         if node.propval('clock-frequency') == [''] and node.propval('xlnx,clock-freq') != ['']:
                             node["clock-frequency"] = LopperProp("clock-frequency")
                             node["clock-frequency"].value = node["xlnx,clock-freq"].value
+                            node.add(node["clock-frequency"])
                         if node.propval('reg-shift') != ['2']:
                             node["reg-shift"] = LopperProp("reg-shift")
                             node["reg-shift"].value = 2
+                            node.add(node["reg-shift"])
                     # MDM RISCV DEBUG UARTLITE
                     if "xlnx,mdm-riscv-1.0" in node["compatible"].value:
                         node["compatible"].value = ["xlnx,xps-uartlite-1.00a"]
@@ -638,9 +675,11 @@ def xlnx_remove_unsupported_nodes(tgt_node, sdt):
                         if node.propval('clock-frequency') == [''] and node.propval('xlnx,clock-freq') != ['']:
                             node["clock-frequency"] = LopperProp("clock-frequency")
                             node["clock-frequency"].value = node["xlnx,clock-freq"].value
+                            node.add(node["clock-frequency"])
                         if node.propval('current-speed') == [''] and node.propval('xlnx,baudrate') != ['']:
                             node["current-speed"] = LopperProp("current-speed")
                             node["current-speed"].value = node["xlnx,baudrate"].value
+                            node.add(node["current-speed"])
                     # UARTPSV
                     if any(version in node["compatible"].value for version in ("arm,pl011", "arm,sbsa-uart")):
                         node["compatible"].value = ["arm,sbsa-uart"]
@@ -685,6 +724,13 @@ def xlnx_remove_unsupported_nodes(tgt_node, sdt):
                             node["#size-cells"] = LopperProp("#size-cells")
                             node["#size-cells"].value = 0
                             node.add(node["#size-cells"])
+                    # TTCPS
+                    if "cdns,ttc" in node["compatible"].value:
+                        node["compatible"].value = ["xlnx,ttcps"]
+                        if node.propval('clock-frequency') == [''] and node.propval('xlnx,clock-freq') != ['']:
+                            node["clock-frequency"] = LopperProp("clock-frequency")
+                            node["clock-frequency"].value = node["xlnx,clock-freq"].value
+                            node.add(node["clock-frequency"])
                     #UFS
                     if "amd,versal2-ufs" in node["compatible"].value:
                         new_node = LopperNode()
